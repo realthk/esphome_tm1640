@@ -1,9 +1,7 @@
- 
 esphome:
   name: test
   platform: ESP8266
   board: d1
-
 
 external_components:
   - source: my_components
@@ -17,7 +15,7 @@ display:
     id: tm1640_display
     clk_pin: D6
     dio_pin: D5
-    inverted: true
+    intensity: 3
     length: 16
     lambda: |-
-      it.print("00000");
+      it.print("-11.2 34.5  65 17.1");

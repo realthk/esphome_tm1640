@@ -4,12 +4,6 @@
 #include "esphome/core/defines.h"
 #include "esphome/core/hal.h"
 
-#include <vector>
-
-#ifdef USE_TIME
-#include "esphome/components/time/real_time_clock.h"
-#endif
-
 namespace esphome {
 namespace tm1640 {
 
@@ -43,22 +37,14 @@ class TM1640Display : public PollingComponent {
   uint8_t print(const char *str);
 
   void set_intensity(uint8_t intensity) { this->intensity_ = intensity; }
-  void set_inverted(bool inverted) { this->inverted_ = inverted; }
   void set_length(uint8_t length) { this->length_ = length; }
 
   void display();
 
-#ifdef USE_TIME
-  /// Evaluate the strftime-format and print the result at the given position.
-  uint8_t strftime(uint8_t pos, const char *format, time::ESPTime time) __attribute__((format(strftime, 3, 0)));
-  /// Evaluate the strftime-format and print the result at position 0.
-  uint8_t strftime(const char *format, time::ESPTime time) __attribute__((format(strftime, 2, 0)));
-#endif
-
  protected:
   void bit_delay_();
   void setup_pins_();
-  bool send_byte_(uint8_t b);
+  void send_byte_(uint8_t b);
   uint8_t read_byte_();
   void start_();
   void stop_();
@@ -67,9 +53,8 @@ class TM1640Display : public PollingComponent {
   GPIOPin *clk_pin_;
   uint8_t intensity_;
   uint8_t length_;
-  bool inverted_;
   optional<tm1640_writer_t> writer_{};
-  uint8_t buffer_[6] = {0};
+  uint8_t buffer_[16] = {0};
 };
 
 }  // namespace tm1640

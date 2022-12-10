@@ -8,15 +8,18 @@ namespace tm1640 {
 
 static const char *const TAG = "display.tm1640";
 const uint8_t TM1640_CMD_DATA = 0x40;  //!< Display data command
+const uint8_t TM1640_CMD_DATA_FIXED = 0x44;  //!< Display data fixed command
 const uint8_t TM1640_CMD_CTRL = 0x80;  //!< Display control command
 const uint8_t TM1640_CMD_ADDR = 0xc0;  //!< Display address command
-const uint8_t TM1640_UNKNOWN_CHAR = 0b11111111;
 
 // Data command bits
 const uint8_t TM1640_DATA_WRITE = 0x00;          //!< Write data
 const uint8_t TM1640_DATA_READ_KEYS = 0x02;      //!< Read keys
 const uint8_t TM1640_DATA_AUTO_INC_ADDR = 0x00;  //!< Auto increment address
 const uint8_t TM1640_DATA_FIXED_ADDR = 0x04;     //!< Fixed address
+
+const bool HIGH = true;
+const bool LOW  = false;
 
 //
 //      A
@@ -26,7 +29,7 @@ const uint8_t TM1640_DATA_FIXED_ADDR = 0x04;     //!< Fixed address
 //  E |   | C
 //     ---
 //      D   X
-// XABCDEFG
+//    XGFEDCBA
 const uint8_t TM1640_ASCII_TO_RAW[] PROGMEM = {
     0b00000000, // (32)  <space>
     0b10000110, // (33)	!
@@ -124,20 +127,21 @@ const uint8_t TM1640_ASCII_TO_RAW[] PROGMEM = {
     0b01110000, // (125)	}
     0b00000001, // (126)	~
 };
+
 void TM1640Display::setup() {
   ESP_LOGCONFIG(TAG, "Setting up TM1640...");
 
   this->clk_pin_->setup();               // OUTPUT
-  this->clk_pin_->digital_write(false);  // LOW
+  this->clk_pin_->digital_write(LOW);
   this->dio_pin_->setup();               // OUTPUT
-  this->dio_pin_->digital_write(false);  // LOW
+  this->dio_pin_->digital_write(LOW);  
 
   this->display();
 }
+
 void TM1640Display::dump_config() {
   ESP_LOGCONFIG(TAG, "TM1640:");
   ESP_LOGCONFIG(TAG, "  Intensity: %d", this->intensity_);
-  ESP_LOGCONFIG(TAG, "  Inverted: %d", this->inverted_);
   ESP_LOGCONFIG(TAG, "  Length: %d", this->length_);
   LOG_PIN("  CLK Pin: ", this->clk_pin_);
   LOG_PIN("  DIO Pin: ", this->dio_pin_);
@@ -145,26 +149,31 @@ void TM1640Display::dump_config() {
 }
 
 void TM1640Display::update() {
-  for (uint8_t &i : this->buffer_)
+  for (uint8_t &i : this->buffer_) {
     i = 0;
-  if (this->writer_.has_value())
+  }
+  if (this->writer_.has_value()) {
     (*this->writer_)(*this);
+  }
   this->display();
 }
 
 float TM1640Display::get_setup_priority() const { return setup_priority::PROCESSOR; }
 void TM1640Display::bit_delay_() { delayMicroseconds(100); }
+
 void TM1640Display::start_() {
   this->dio_pin_->pin_mode(gpio::FLAG_OUTPUT);
+  this->clk_pin_->pin_mode(gpio::FLAG_OUTPUT);
+
+  this->dio_pin_->digital_write(LOW);  // LOW  
+  this->clk_pin_->digital_write(LOW);  // LOW  
   this->bit_delay_();
 }
 
 void TM1640Display::stop_() {
   this->dio_pin_->pin_mode(gpio::FLAG_OUTPUT);
-  bit_delay_();
-  this->clk_pin_->pin_mode(gpio::FLAG_INPUT);
-  bit_delay_();
-  this->dio_pin_->pin_mode(gpio::FLAG_INPUT);
+  this->dio_pin_->digital_write(true);  // HIGH
+  this->clk_pin_->digital_write(true);  // HIGH  
   bit_delay_();
 }
 
@@ -181,14 +190,8 @@ void TM1640Display::display() {
   this->send_byte_(TM1640_CMD_ADDR);
 
   // Write the data bytes
-  if (this->inverted_) {
-    for (int8_t i = this->length_ - 1; i >= 0; i--) {
-      this->send_byte_(this->buffer_[i]);
-    }
-  } else {
-    for (auto b : this->buffer_) {
-      this->send_byte_(b);
-    }
+  for (auto b : this->buffer_) {
+    this->send_byte_(b);
   }
 
   this->stop_();
@@ -199,86 +202,44 @@ void TM1640Display::display() {
   this->stop_();
 }
 
-bool TM1640Display::send_byte_(uint8_t b) {
+void TM1640Display::send_byte_(uint8_t b) {
   uint8_t data = b;
   for (uint8_t i = 0; i < 8; i++) {
     // CLK low
-    this->clk_pin_->pin_mode(gpio::FLAG_OUTPUT);
+    this->clk_pin_->digital_write(LOW);
     this->bit_delay_();
-    // Set data bit
-    if (data & 0x01) {
-      this->dio_pin_->pin_mode(gpio::FLAG_INPUT);
-    } else {
-      this->dio_pin_->pin_mode(gpio::FLAG_OUTPUT);
-    }
 
+    // Set data bit
+    this->dio_pin_->digital_write(data & 0x01 ? HIGH : LOW); 
     this->bit_delay_();
+
     // CLK high
-    this->clk_pin_->pin_mode(gpio::FLAG_INPUT);
+    this->clk_pin_->digital_write(HIGH); 
     this->bit_delay_();
+    
     data = data >> 1;
   }
 
-  // Wait for acknowledge
-  // CLK to zero
-  this->clk_pin_->pin_mode(gpio::FLAG_OUTPUT);
-  this->dio_pin_->pin_mode(gpio::FLAG_INPUT);
   this->bit_delay_();
-  // CLK to high
-  this->clk_pin_->pin_mode(gpio::FLAG_INPUT);
-  this->bit_delay_();
-  uint8_t ack = this->dio_pin_->digital_read();
-  if (ack == 0) {
-    this->dio_pin_->pin_mode(gpio::FLAG_OUTPUT);
-  }
-
-  this->bit_delay_();
-  this->clk_pin_->pin_mode(gpio::FLAG_INPUT);
-  this->bit_delay_();
-
-  return ack;
 }
 
+
 uint8_t TM1640Display::print(uint8_t start_pos, const char *str) {
-  // ESP_LOGV(TAG, "Print at %d: %s", start_pos, str);
+  ESP_LOGV(TAG, "Print at %d: %s", start_pos, str);
   uint8_t pos = start_pos;
   for (; *str != '\0'; str++) {
-    uint8_t data = TM1640_UNKNOWN_CHAR;
-    if (*str >= ' ' && *str <= '~')
+    uint8_t data = ' ';
+    if (*str >= ' ' && *str <= '~') {
       data = progmem_read_byte(&TM1640_ASCII_TO_RAW[*str - ' ']);
+    }
 
-    if (data == TM1640_UNKNOWN_CHAR) {
-      ESP_LOGW(TAG, "Encountered character '%c' with no TM1640 representation while translating string!", *str);
-    }
-    // Remap segments, for compatibility with MAX7219 segment definition which is
-    // XABCDEFG, but TM1640 is // XGFEDCBA
-    if (this->inverted_) {
-      // XABCDEFG > XGCBAFED
-      data = ((data & 0x80) ? 0x80 : 0) |  // no move X
-             ((data & 0x40) ? 0x8 : 0) |   // A
-             ((data & 0x20) ? 0x10 : 0) |  // B
-             ((data & 0x10) ? 0x20 : 0) |  // C
-             ((data & 0x8) ? 0x1 : 0) |    // D
-             ((data & 0x4) ? 0x2 : 0) |    // E
-             ((data & 0x2) ? 0x4 : 0) |    // F
-             ((data & 0x1) ? 0x40 : 0);    // G
-    } else {
-      // XABCDEFG > XGFEDCBA
-      data = ((data & 0x80) ? 0x80 : 0) |  // no move X
-             ((data & 0x40) ? 0x1 : 0) |   // A
-             ((data & 0x20) ? 0x2 : 0) |   // B
-             ((data & 0x10) ? 0x4 : 0) |   // C
-             ((data & 0x8) ? 0x8 : 0) |    // D
-             ((data & 0x4) ? 0x10 : 0) |   // E
-             ((data & 0x2) ? 0x20 : 0) |   // F
-             ((data & 0x1) ? 0x40 : 0);    // G
-    }
     if (*str == '.') {
-      if (pos != start_pos)
+      if (pos != start_pos) {
         pos--;
+      }
       this->buffer_[pos] |= 0b10000000;
     } else {
-      if (pos >= 6) {
+      if (pos >= this->length_) {
         ESP_LOGE(TAG, "String is too long for the display!");
         break;
       }
@@ -288,6 +249,7 @@ uint8_t TM1640Display::print(uint8_t start_pos, const char *str) {
   }
   return pos - start_pos;
 }
+
 uint8_t TM1640Display::print(const char *str) { return this->print(0, str); }
 uint8_t TM1640Display::printf(uint8_t pos, const char *format, ...) {
   va_list arg;
@@ -295,31 +257,23 @@ uint8_t TM1640Display::printf(uint8_t pos, const char *format, ...) {
   char buffer[64];
   int ret = vsnprintf(buffer, sizeof(buffer), format, arg);
   va_end(arg);
-  if (ret > 0)
+  if (ret > 0) {
     return this->print(pos, buffer);
+  }
   return 0;
 }
+
 uint8_t TM1640Display::printf(const char *format, ...) {
   va_list arg;
   va_start(arg, format);
   char buffer[64];
   int ret = vsnprintf(buffer, sizeof(buffer), format, arg);
   va_end(arg);
-  if (ret > 0)
+  if (ret > 0) {
     return this->print(buffer);
+  }
   return 0;
 }
-
-#ifdef USE_TIME
-uint8_t TM1640Display::strftime(uint8_t pos, const char *format, time::ESPTime time) {
-  char buffer[64];
-  size_t ret = time.strftime(buffer, sizeof(buffer), format);
-  if (ret > 0)
-    return this->print(pos, buffer);
-  return 0;
-}
-uint8_t TM1640Display::strftime(const char *format, time::ESPTime time) { return this->strftime(0, format, time); }
-#endif
 
 }  // namespace tm1640
 }  // namespace esphome
