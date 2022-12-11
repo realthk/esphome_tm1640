@@ -10,13 +10,7 @@ static const char *const TAG = "display.tm1640";
 const uint8_t TM1640_CMD_DATA = 0x40;  //!< Display data command
 const uint8_t TM1640_CMD_DATA_FIXED = 0x44;  //!< Display data fixed command
 const uint8_t TM1640_CMD_CTRL = 0x80;  //!< Display control command
-const uint8_t TM1640_CMD_ADDR = 0xc0;  //!< Display address command
-
-// Data command bits
-const uint8_t TM1640_DATA_WRITE = 0x00;          //!< Write data
-const uint8_t TM1640_DATA_READ_KEYS = 0x02;      //!< Read keys
-const uint8_t TM1640_DATA_AUTO_INC_ADDR = 0x00;  //!< Auto increment address
-const uint8_t TM1640_DATA_FIXED_ADDR = 0x04;     //!< Fixed address
+const uint8_t TM1640_CMD_ADDR = 0xC0;  //!< Display address command
 
 const bool HIGH = true;
 const bool LOW  = false;
@@ -152,6 +146,7 @@ void TM1640Display::update() {
   for (uint8_t &i : this->buffer_) {
     i = 0;
   }
+
   if (this->writer_.has_value()) {
     (*this->writer_)(*this);
   }
@@ -162,24 +157,20 @@ float TM1640Display::get_setup_priority() const { return setup_priority::PROCESS
 void TM1640Display::bit_delay_() { delayMicroseconds(100); }
 
 void TM1640Display::start_() {
-  this->dio_pin_->pin_mode(gpio::FLAG_OUTPUT);
-  this->clk_pin_->pin_mode(gpio::FLAG_OUTPUT);
-
-  this->dio_pin_->digital_write(LOW);  // LOW  
-  this->clk_pin_->digital_write(LOW);  // LOW  
+  this->dio_pin_->digital_write(LOW);
   this->bit_delay_();
 }
 
 void TM1640Display::stop_() {
-  this->dio_pin_->pin_mode(gpio::FLAG_OUTPUT);
-  this->dio_pin_->digital_write(true);  // HIGH
-  this->clk_pin_->digital_write(true);  // HIGH  
+  this->dio_pin_->digital_write(LOW);
+  bit_delay_();
+  this->clk_pin_->digital_write(HIGH);
+  bit_delay_();
+  this->dio_pin_->digital_write(HIGH);
   bit_delay_();
 }
 
 void TM1640Display::display() {
-  ESP_LOGVV(TAG, "Display %02X%02X%02X%02X", buffer_[0], buffer_[1], buffer_[2], buffer_[3]);
-
   // Write DATA CMND
   this->start_();
   this->send_byte_(TM1640_CMD_DATA);
@@ -190,10 +181,9 @@ void TM1640Display::display() {
   this->send_byte_(TM1640_CMD_ADDR);
 
   // Write the data bytes
-  for (auto b : this->buffer_) {
-    this->send_byte_(b);
+  for (uint8_t b=0; b<this->length_; b++) {
+    this->send_byte_( this->buffer_[b]);
   }
-
   this->stop_();
 
   // Write display CTRL CMND + brightness
@@ -205,16 +195,19 @@ void TM1640Display::display() {
 void TM1640Display::send_byte_(uint8_t b) {
   uint8_t data = b;
   for (uint8_t i = 0; i < 8; i++) {
-    // CLK low
-    this->clk_pin_->digital_write(LOW);
+    this->clk_pin_->digital_write(LOW); 
     this->bit_delay_();
 
-    // Set data bit
+    // Set data bit while CLK is low
     this->dio_pin_->digital_write(data & 0x01 ? HIGH : LOW); 
     this->bit_delay_();
 
+    // then do a CLK low-high to send databit
+    this->clk_pin_->digital_write(HIGH);
+    this->bit_delay_();
+
     // CLK high
-    this->clk_pin_->digital_write(HIGH); 
+    this->clk_pin_->digital_write(LOW); 
     this->bit_delay_();
     
     data = data >> 1;

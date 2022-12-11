@@ -1,0 +1,51 @@
+substitutions:
+  systemName: "temp_display" 
+
+esphome:
+  name: $systemName
+  platform: ESP8266
+  board: d1
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  fast_connect: true
+
+  manual_ip:
+    static_ip: 192.168.8.94
+    gateway: 192.168.8.1
+    subnet: 255.255.255.0
+
+  ap:
+    ssid: "$systemName"
+    password: !secret wifi_password  
+
+api:
+   password: !secret api_password  
+       
+ota:
+   password: !secret ota_password
+   safe_mode: True
+
+external_components:
+  - source: my_components
+
+logger:
+  baud_rate: 115200
+  level: DEBUG
+
+text_sensor:
+  - platform: homeassistant
+    id: temp_display  
+    entity_id: input_text.temp_display
+
+display:
+  - platform: tm1640
+    id: tm1640_display
+    clk_pin: D6
+    dio_pin: D5
+    intensity: 3
+    length: 16
+    lambda: |-
+      it.printf("%s", id(temp_display).state.c_str());
+      

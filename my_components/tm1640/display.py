@@ -27,7 +27,7 @@ CONFIG_SCHEMA = disp.BASIC_DISPLAY_SCHEMA.extend(
         cv.Required(CONF_CLK_PIN): pins.gpio_output_pin_schema,
         cv.Required(CONF_DIO_PIN): pins.gpio_output_pin_schema,
     }
-).extend(cv.polling_component_schema("1s"))
+).extend(cv.polling_component_schema("10s"))
 
 
 async def to_code(config):
