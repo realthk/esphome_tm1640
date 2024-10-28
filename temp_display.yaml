@@ -1,5 +1,5 @@
 substitutions:
-  systemName: "temp_display" 
+  systemName: "temp-display" 
 
 esphome:
   name: $systemName
@@ -22,10 +22,14 @@ wifi:
 
 api:
    password: !secret api_password  
+   encryption:
+      key: !secret api_encryption_key
        
 ota:
+   platform: esphome
    password: !secret ota_password
-   safe_mode: True
+
+safe_mode: 
 
 external_components:
   - source: my_components
